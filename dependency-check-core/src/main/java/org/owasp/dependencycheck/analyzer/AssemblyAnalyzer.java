@@ -358,7 +358,7 @@ public class AssemblyAnalyzer extends AbstractFileTypeAnalyzer {
      * <code>false</code>
      */
     private boolean isInPath(String file) {
-        final ProcessBuilder pb = new ProcessBuilder("which", file);
+        final ProcessBuilder pb = new ProcessBuilder("type", file);
         try {
             final Process proc = pb.start();
             final int retCode = proc.waitFor();
