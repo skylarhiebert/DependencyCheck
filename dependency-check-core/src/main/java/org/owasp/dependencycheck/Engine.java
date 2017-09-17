@@ -60,6 +60,8 @@ import java.util.concurrent.TimeUnit;
 import javax.annotation.concurrent.NotThreadSafe;
 
 import static org.owasp.dependencycheck.analyzer.AnalysisPhase.*;
+import org.owasp.dependencycheck.exception.H2DBLockException;
+import org.owasp.dependencycheck.utils.H2DBLock;
 
 /**
  * Scans files, directories, etc. for Dependencies. Analyzers are loaded and
@@ -855,23 +857,42 @@ public class Engine implements FileFilter, AutoCloseable {
      */
     public void doUpdates() throws UpdateException {
         if (mode.isDatabseRequired()) {
-            openDatabase();
-            LOGGER.info("Checking for updates");
-            final long updateStart = System.currentTimeMillis();
-            final UpdateService service = new UpdateService(serviceClassLoader);
-            final Iterator<CachedWebDataSource> iterator = service.getDataSources();
-            while (iterator.hasNext()) {
-                final CachedWebDataSource source = iterator.next();
-                source.update(this);
+            H2DBLock dblock = null;
+            try {
+                if (ConnectionFactory.isH2Connection(settings)) {
+                    dblock = new H2DBLock(settings);
+                    LOGGER.debug("locking for update");
+                    dblock.lock();
+                }
+                database = new CveDB(settings);
+                LOGGER.info("Checking for updates");
+                final long updateStart = System.currentTimeMillis();
+                final UpdateService service = new UpdateService(serviceClassLoader);
+                final Iterator<CachedWebDataSource> iterator = service.getDataSources();
+                while (iterator.hasNext()) {
+                    final CachedWebDataSource source = iterator.next();
+                    source.update(this);
+                }
+                LOGGER.info("Check for updates complete ({} ms)", System.currentTimeMillis() - updateStart);
+            } catch (H2DBLockException ex) {
+                throw new UpdateException("Unable to obtain an exclusive lock on the H2 database to perform updates", ex);
+            } finally {
+                if (dblock != null) {
+                    dblock.release();
+                }
             }
-            LOGGER.info("Check for updates complete ({} ms)", System.currentTimeMillis() - updateStart);
         } else {
             LOGGER.info("Skipping update check in evidence collection mode.");
         }
     }
 
     /**
-     * Opens the database connection.
+     * <p>
+     * This method is only public for unit/integration testing. This method
+     * should not be called by any integration that uses
+     * dependency-check-core.</p>
+     * <p>
+     * Opens the database connection.</p>
      */
     public void openDatabase() {
         if (mode.isDatabseRequired() && database == null) {
