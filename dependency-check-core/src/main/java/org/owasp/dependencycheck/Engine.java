@@ -716,8 +716,7 @@ public class Engine implements FileFilter, AutoCloseable {
         }
         if (autoUpdate) {
             try {
-                doUpdates();
-                openDatabase(true);
+                doUpdates(true);
             } catch (UpdateException ex) {
                 exceptions.add(ex);
                 LOGGER.warn("Unable to update Cached Web DataSource, using local "
@@ -731,7 +730,7 @@ public class Engine implements FileFilter, AutoCloseable {
                 if (ConnectionFactory.isH2Connection(settings) && !ConnectionFactory.h2DataFileExists(settings)) {
                     throw new ExceptionCollection(new NoDataException("Autoupdate is disabled and the database does not exist"), true);
                 } else {
-                    openDatabase(true);
+                    openDatabase(true, true);
                 }
             } catch (IOException ex) {
                 throw new ExceptionCollection(new DatabaseException("Autoupdate is disabled and unable to connect to the database"), true);
@@ -861,6 +860,16 @@ public class Engine implements FileFilter, AutoCloseable {
      * @throws UpdateException thrown if the operation fails
      */
     public void doUpdates() throws UpdateException {
+        doUpdates(false);
+    }
+
+    /**
+     * Cycles through the cached web data sources and calls update on all of
+     * them.
+     *
+     * @throws UpdateException thrown if the operation fails
+     */
+    public void doUpdates(boolean remainOpen) throws UpdateException {
         if (mode.isDatabseRequired()) {
             H2DBLock dblock = null;
             try {
@@ -881,6 +890,9 @@ public class Engine implements FileFilter, AutoCloseable {
                 database.close();
                 database = null;
                 LOGGER.info("Check for updates complete ({} ms)", System.currentTimeMillis() - updateStart);
+                if (remainOpen) {
+                    openDatabase(true, false);
+                }
             } catch (H2DBLockException ex) {
                 throw new UpdateException("Unable to obtain an exclusive lock on the H2 database to perform updates", ex);
             } finally {
@@ -902,7 +914,7 @@ public class Engine implements FileFilter, AutoCloseable {
      * Opens the database connection.</p>
      */
     public void openDatabase() {
-        openDatabase(false);
+        openDatabase(false, true);
     }
 
     /**
@@ -916,9 +928,12 @@ public class Engine implements FileFilter, AutoCloseable {
      *
      * @param readOnly whether or not the database connection should be
      * readonly.
+     * @param lockRequired
      */
-    public void openDatabase(boolean readOnly) {
+    public void openDatabase(boolean readOnly, boolean lockRequired) {
         if (mode.isDatabseRequired() && database == null) {
+            //needed to update schema any required schema changes
+            database = new CveDB(settings);
             if (readOnly
                     && ConnectionFactory.isH2Connection(settings)
                     && settings.getString(Settings.KEYS.DB_CONNECTION_STRING).contains("file:%s")) {
@@ -926,8 +941,11 @@ public class Engine implements FileFilter, AutoCloseable {
                 try {
                     File db = ConnectionFactory.getH2DataFile(settings);
                     if (db.isFile()) {
-                        lock = new H2DBLock(settings);
-                        lock.lock();
+                        database.close();
+                        if (lockRequired) {
+                            lock = new H2DBLock(settings);
+                            lock.lock();
+                        }
                         LOGGER.debug("copying database");
                         File temp = settings.getTempDirectory();
                         File tempDB = new File(temp, db.getName());
@@ -936,6 +954,7 @@ public class Engine implements FileFilter, AutoCloseable {
                         settings.setString(Settings.KEYS.DATA_DIRECTORY, temp.getPath());
                         String connStr = settings.getString(Settings.KEYS.DB_CONNECTION_STRING);
                         settings.setString(Settings.KEYS.DB_CONNECTION_STRING, connStr + "ACCESS_MODE_DATA=r");
+                        database = new CveDB(settings);
                     }
                 } catch (IOException ex) {
                     LOGGER.debug("Unable to open db in read only mode", ex);
@@ -947,7 +966,6 @@ public class Engine implements FileFilter, AutoCloseable {
                     }
                 }
             }
-            database = new CveDB(settings);
         }
     }
 

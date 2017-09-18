@@ -150,8 +150,7 @@ public class RubyBundleAuditAnalyzerIT extends BaseDBTestCase {
     @Test
     public void testAddCriticalityToVulnerability() throws AnalysisException, DatabaseException {
         try (Engine engine = new Engine(getSettings())) {
-            engine.doUpdates();
-            engine.openDatabase();
+            engine.doUpdates(true);
             analyzer.prepare(engine);
 
             final Dependency result = new Dependency(BaseTest.getResourceAsFile(this,

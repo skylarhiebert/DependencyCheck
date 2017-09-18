@@ -885,7 +885,6 @@ public class DependencyCheckScanAgent {
         if (this.updateOnly) {
             try {
                 engine.doUpdates();
-                engine.openDatabase(true);
             } catch (UpdateException ex) {
                 throw new ExceptionCollection("Unable to perform update", ex);
             }
