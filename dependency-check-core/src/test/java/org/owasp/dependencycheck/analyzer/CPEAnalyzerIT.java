@@ -87,6 +87,7 @@ public class CPEAnalyzerIT extends BaseDBTestCase {
         //update needs to be performed so that xtream can be tested
         Engine e = new Engine(getSettings());
         e.doUpdates();
+        e.openDatabase();
 
         CPEAnalyzer cpeAnalyzer = new CPEAnalyzer();
         try {

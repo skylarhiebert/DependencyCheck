@@ -253,10 +253,22 @@ public final class ConnectionFactory {
      * cannot be created
      */
     public static boolean h2DataFileExists(Settings configuration) throws IOException {
+        File file = getH2DataFile(configuration);
+        return file.exists();
+    }
+
+    /**
+     * Returns a reference to the H2 database file.
+     *
+     * @param configuration the configured settings
+     * @return the path to the H2 database file
+     * @throws IOException thrown if there is an error
+     */
+    public static File getH2DataFile(Settings configuration) throws IOException {
         final File dir = configuration.getDataDirectory();
         final String fileName = configuration.getString(Settings.KEYS.DB_FILE_NAME);
         final File file = new File(dir, fileName);
-        return file.exists();
+        return file;
     }
 
     /**

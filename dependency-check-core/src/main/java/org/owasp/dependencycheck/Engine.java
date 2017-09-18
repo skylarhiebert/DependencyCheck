@@ -42,6 +42,9 @@ import org.slf4j.LoggerFactory;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.nio.file.CopyOption;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -61,6 +64,7 @@ import javax.annotation.concurrent.NotThreadSafe;
 
 import static org.owasp.dependencycheck.analyzer.AnalysisPhase.*;
 import org.owasp.dependencycheck.exception.H2DBLockException;
+import org.owasp.dependencycheck.utils.FileUtils;
 import org.owasp.dependencycheck.utils.H2DBLock;
 
 /**
@@ -713,6 +717,7 @@ public class Engine implements FileFilter, AutoCloseable {
         if (autoUpdate) {
             try {
                 doUpdates();
+                openDatabase(true);
             } catch (UpdateException ex) {
                 exceptions.add(ex);
                 LOGGER.warn("Unable to update Cached Web DataSource, using local "
@@ -726,7 +731,7 @@ public class Engine implements FileFilter, AutoCloseable {
                 if (ConnectionFactory.isH2Connection(settings) && !ConnectionFactory.h2DataFileExists(settings)) {
                     throw new ExceptionCollection(new NoDataException("Autoupdate is disabled and the database does not exist"), true);
                 } else {
-                    openDatabase();
+                    openDatabase(true);
                 }
             } catch (IOException ex) {
                 throw new ExceptionCollection(new DatabaseException("Autoupdate is disabled and unable to connect to the database"), true);
@@ -873,6 +878,8 @@ public class Engine implements FileFilter, AutoCloseable {
                     final CachedWebDataSource source = iterator.next();
                     source.update(this);
                 }
+                database.close();
+                database = null;
                 LOGGER.info("Check for updates complete ({} ms)", System.currentTimeMillis() - updateStart);
             } catch (H2DBLockException ex) {
                 throw new UpdateException("Unable to obtain an exclusive lock on the H2 database to perform updates", ex);
@@ -895,7 +902,51 @@ public class Engine implements FileFilter, AutoCloseable {
      * Opens the database connection.</p>
      */
     public void openDatabase() {
+        openDatabase(false);
+    }
+
+    /**
+     * <p>
+     * This method is only public for unit/integration testing. This method
+     * should not be called by any integration that uses
+     * dependency-check-core.</p>
+     * <p>
+     * Opens the database connection; if readOnly is true a copy of the database
+     * will be made..</p>
+     *
+     * @param readOnly whether or not the database connection should be
+     * readonly.
+     */
+    public void openDatabase(boolean readOnly) {
         if (mode.isDatabseRequired() && database == null) {
+            if (readOnly
+                    && ConnectionFactory.isH2Connection(settings)
+                    && settings.getString(Settings.KEYS.DB_CONNECTION_STRING).contains("file:%s")) {
+                H2DBLock lock = null;
+                try {
+                    File db = ConnectionFactory.getH2DataFile(settings);
+                    if (db.isFile()) {
+                        lock = new H2DBLock(settings);
+                        lock.lock();
+                        LOGGER.debug("copying database");
+                        File temp = settings.getTempDirectory();
+                        File tempDB = new File(temp, db.getName());
+                        Files.copy(db.toPath(), tempDB.toPath());
+                        LOGGER.debug("copying complete '{}'", temp.toPath());
+                        settings.setString(Settings.KEYS.DATA_DIRECTORY, temp.getPath());
+                        String connStr = settings.getString(Settings.KEYS.DB_CONNECTION_STRING);
+                        settings.setString(Settings.KEYS.DB_CONNECTION_STRING, connStr + "ACCESS_MODE_DATA=r");
+                    }
+                } catch (IOException ex) {
+                    LOGGER.debug("Unable to open db in read only mode", ex);
+                } catch (H2DBLockException ex) {
+                    LOGGER.debug("Failed to obtain lock - unable to open db in read only mode", ex);
+                } finally {
+                    if (lock != null) {
+                        lock.release();
+                    }
+                }
+            }
             database = new CveDB(settings);
         }
     }
