@@ -867,6 +867,8 @@ public class Engine implements FileFilter, AutoCloseable {
      * Cycles through the cached web data sources and calls update on all of
      * them.
      *
+     * @param remainOpen whether or not the database connection should remain
+     * open
      * @throws UpdateException thrown if the operation fails
      */
     public void doUpdates(boolean remainOpen) throws UpdateException {
@@ -878,7 +880,7 @@ public class Engine implements FileFilter, AutoCloseable {
                     LOGGER.debug("locking for update");
                     dblock.lock();
                 }
-                database = new CveDB(settings);
+                openDatabase(false, false);
                 LOGGER.info("Checking for updates");
                 final long updateStart = System.currentTimeMillis();
                 final UpdateService service = new UpdateService(serviceClassLoader);
