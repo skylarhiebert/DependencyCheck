@@ -21,6 +21,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileLock;
+import java.security.SecureRandom;
 import java.util.Date;
 import javax.annotation.concurrent.NotThreadSafe;
 import org.owasp.dependencycheck.exception.H2DBLockException;
@@ -62,6 +63,7 @@ public class H2DBLock {
      * The configured settings.
      */
     private final Settings settings;
+    private final String magic;
 
     /**
      * Constructs a new H2DB Lock object with the configured settings.
@@ -70,6 +72,10 @@ public class H2DBLock {
      */
     public H2DBLock(Settings settings) {
         this.settings = settings;
+        byte[] random = new byte[16];
+        SecureRandom gen = new SecureRandom();
+        gen.nextBytes(random);
+        magic = Checksum.getHex(random);
     }
 
     /**
@@ -103,9 +109,20 @@ public class H2DBLock {
                     if (!lockFile.exists() && lockFile.createNewFile()) {
                         file = new RandomAccessFile(lockFile, "rw");
                         lock = file.getChannel().lock();
-                        LOGGER.debug("Lock file created ({})", Thread.currentThread().getName());
+                        file.writeBytes(magic);
+                        file.getChannel().force(true);
+                        Thread.sleep(20);
+                        file.seek(0);
+                        String current = file.readLine();
+                        if (current != null && !current.equals(magic)) {
+                            lock.close();
+                            lock = null;
+                            LOGGER.debug("Another process obtained a lock first ({})", Thread.currentThread().getName());
+                        } else {
+                            LOGGER.debug("Lock file created ({})", Thread.currentThread().getName());
+                        }
                     }
-                } catch (IOException ex) {
+                } catch (IOException | InterruptedException ex) {
                     LOGGER.trace("Expected error as another thread has likely locked the file", ex);
                 } finally {
                     if (lock == null && file != null) {
@@ -135,7 +152,7 @@ public class H2DBLock {
         }
 
     }
-    
+
     /**
      * Releases the lock on the H2 database.
      */
