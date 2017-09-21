@@ -39,6 +39,14 @@ public class H2DBLock {
      */
     private static final Logger LOGGER = LoggerFactory.getLogger(H2DBLock.class);
     /**
+     * How long to sleep waiting for the lock.
+     */
+    public static final int SLEEP_DURATION = 5000;
+    /**
+     * Max attempts to obtain a lock.
+     */
+    public static final int MAX_SLEEP_COUNT = 120;
+    /**
      * The file lock.
      */
     private FileLock lock = null;
@@ -112,13 +120,13 @@ public class H2DBLock {
                     try {
                         LOGGER.debug("Sleeping thread {} for 5 seconds because an exclusive lock on the database could not be obtained",
                                 Thread.currentThread().getName());
-                        Thread.sleep(5000);
+                        Thread.sleep(SLEEP_DURATION);
                     } catch (InterruptedException ex) {
                         LOGGER.trace("ignorable error, sleep was interrupted.", ex);
                         Thread.currentThread().interrupt();
                     }
                 }
-            } while (++ctr < 60 && (lock == null || !lock.isValid()));
+            } while (++ctr < MAX_SLEEP_COUNT && (lock == null || !lock.isValid()));
             if (lock == null || !lock.isValid()) {
                 throw new H2DBLockException("Unable to obtain the update lock, skipping the database update. Skippinig the database update.");
             }
@@ -127,7 +135,7 @@ public class H2DBLock {
         }
 
     }
-
+    
     /**
      * Releases the lock on the H2 database.
      */
