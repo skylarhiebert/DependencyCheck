@@ -46,7 +46,7 @@ public class H2DBLock {
     /**
      * Max attempts to obtain a lock.
      */
-    public static final int MAX_SLEEP_COUNT = 120;
+    public static final int MAX_SLEEP_COUNT = 60;
     /**
      * The file lock.
      */
@@ -63,6 +63,9 @@ public class H2DBLock {
      * The configured settings.
      */
     private final Settings settings;
+    /**
+     * A random string used to validate the lock.
+     */
     private final String magic;
 
     /**
@@ -128,8 +131,9 @@ public class H2DBLock {
                     if (lock == null && file != null) {
                         try {
                             file.close();
+                            file = null;
                         } catch (IOException ex) {
-                            LOGGER.trace("Unable to close the ulFile", ex);
+                            LOGGER.trace("Unable to close the file", ex);
                         }
                     }
                 }
@@ -150,7 +154,6 @@ public class H2DBLock {
         } catch (IOException ex) {
             throw new H2DBLockException(ex.getMessage(), ex);
         }
-
     }
 
     /**
@@ -178,6 +181,7 @@ public class H2DBLock {
             lockFile.deleteOnExit();
         }
         lockFile = null;
+        Thread.yield();
         LOGGER.debug("Lock released ({})", Thread.currentThread().getName());
     }
 
