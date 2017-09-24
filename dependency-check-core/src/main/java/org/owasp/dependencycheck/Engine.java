@@ -871,7 +871,7 @@ public class Engine implements FileFilter, AutoCloseable {
      * open
      * @throws UpdateException thrown if the operation fails
      */
-    public void doUpdates(boolean remainOpen) throws UpdateException {
+    public synchronized void doUpdates(boolean remainOpen) throws UpdateException {
         if (mode.isDatabseRequired()) {
             H2DBLock dblock = null;
             try {
@@ -926,13 +926,13 @@ public class Engine implements FileFilter, AutoCloseable {
      * dependency-check-core.</p>
      * <p>
      * Opens the database connection; if readOnly is true a copy of the database
-     * will be made..</p>
+     * will be made.</p>
      *
-     * @param readOnly whether or not the database connection should be
-     * readonly.
-     * @param lockRequired
+     * @param readOnly whether or not the database connection should be readonly
+     * @param lockRequired whether or not a lock needs to be acquired when
+     * opening the database
      */
-    public void openDatabase(boolean readOnly, boolean lockRequired) {
+    public synchronized void openDatabase(boolean readOnly, boolean lockRequired) {
         if (mode.isDatabseRequired() && database == null) {
             //needed to update schema any required schema changes
             database = new CveDB(settings);
