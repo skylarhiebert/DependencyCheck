@@ -68,6 +68,10 @@ public class H2DBLock {
      * A random string used to validate the lock.
      */
     private final String magic;
+    /**
+     * Variable to synchronize on across all threads.
+     */
+    private final static Object THREAD_LOCK = new Object();
 
     /**
      * Constructs a new H2DB Lock object with the configured settings.
@@ -97,65 +101,67 @@ public class H2DBLock {
      * @throws H2DBLockException thrown if a lock could not be obtained
      */
     public void lock() throws H2DBLockException {
-        try {
-            final File dir = settings.getDataDirectory();
-            lockFile = new File(dir, "dc.update.lock");
-            if (!lockFile.getParentFile().isDirectory() && !lockFile.mkdir()) {
-                throw new H2DBLockException("Unable to create path to data directory.");
-            }
-            if (lockFile.isFile() && getFileAge(lockFile) > 5 && !lockFile.delete()) {
-                LOGGER.warn("An old db update lock file was found but the system was unable to delete "
-                        + "the file. Consider manually deleting {}", lockFile.getAbsolutePath());
-            }
-            int ctr = 0;
-            do {
-                try {
-                    if (!lockFile.exists() && lockFile.createNewFile()) {
-                        file = new RandomAccessFile(lockFile, "rw");
-                        lock = file.getChannel().lock();
-                        file.writeBytes(magic);
-                        file.getChannel().force(true);
-                        Thread.sleep(20);
-                        file.seek(0);
-                        String current = file.readLine();
-                        if (current != null && !current.equals(magic)) {
-                            lock.close();
-                            lock = null;
-                            LOGGER.debug("Another process obtained a lock first ({})", Thread.currentThread().getName());
-                        } else {
-                            Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-                            LOGGER.debug("Lock file created ({}) @ {}", Thread.currentThread().getName(), timestamp.toString());
-                        }
-                    }
-                } catch (IOException | InterruptedException ex) {
-                    LOGGER.trace("Expected error as another thread has likely locked the file", ex);
-                } finally {
-                    if (lock == null && file != null) {
-                        try {
-                            file.close();
-                            file = null;
-                        } catch (IOException ex) {
-                            LOGGER.trace("Unable to close the file", ex);
-                        }
-                    }
+        synchronized (THREAD_LOCK) {
+            try {
+                final File dir = settings.getDataDirectory();
+                lockFile = new File(dir, "dc.update.lock");
+                if (!lockFile.getParentFile().isDirectory() && !lockFile.mkdir()) {
+                    throw new H2DBLockException("Unable to create path to data directory.");
                 }
-                if (lock == null || !lock.isValid()) {
+                if (lockFile.isFile() && getFileAge(lockFile) > 5 && !lockFile.delete()) {
+                    LOGGER.warn("An old db update lock file was found but the system was unable to delete "
+                            + "the file. Consider manually deleting {}", lockFile.getAbsolutePath());
+                }
+                int ctr = 0;
+                do {
                     try {
-                        Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-                        LOGGER.debug("Sleeping thread {} for 5 seconds because an exclusive lock on the database could not be obtained ({})",
-                                Thread.currentThread().getName(), timestamp.toString());
-                        Thread.sleep(SLEEP_DURATION);
-                    } catch (InterruptedException ex) {
-                        LOGGER.debug("sleep was interrupted.", ex);
-                        Thread.currentThread().interrupt();
+                        if (!lockFile.exists() && lockFile.createNewFile()) {
+                            file = new RandomAccessFile(lockFile, "rw");
+                            lock = file.getChannel().lock();
+                            file.writeBytes(magic);
+                            file.getChannel().force(true);
+                            Thread.sleep(20);
+                            file.seek(0);
+                            String current = file.readLine();
+                            if (current != null && !current.equals(magic)) {
+                                lock.close();
+                                lock = null;
+                                LOGGER.debug("Another process obtained a lock first ({})", Thread.currentThread().getName());
+                            } else {
+                                Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                                LOGGER.debug("Lock file created ({}) @ {}", Thread.currentThread().getName(), timestamp.toString());
+                            }
+                        }
+                    } catch (IOException | InterruptedException ex) {
+                        LOGGER.trace("Expected error as another thread has likely locked the file", ex);
+                    } finally {
+                        if (lock == null && file != null) {
+                            try {
+                                file.close();
+                                file = null;
+                            } catch (IOException ex) {
+                                LOGGER.trace("Unable to close the file", ex);
+                            }
+                        }
                     }
+                    if (lock == null || !lock.isValid()) {
+                        try {
+                            Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                            LOGGER.debug("Sleeping thread {} for 5 seconds because an exclusive lock on the database could not be obtained ({})",
+                                    Thread.currentThread().getName(), timestamp.toString());
+                            Thread.sleep(SLEEP_DURATION);
+                        } catch (InterruptedException ex) {
+                            LOGGER.debug("sleep was interrupted.", ex);
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                } while (++ctr < MAX_SLEEP_COUNT && (lock == null || !lock.isValid()));
+                if (lock == null || !lock.isValid()) {
+                    throw new H2DBLockException("Unable to obtain the update lock, skipping the database update. Skippinig the database update.");
                 }
-            } while (++ctr < MAX_SLEEP_COUNT && (lock == null || !lock.isValid()));
-            if (lock == null || !lock.isValid()) {
-                throw new H2DBLockException("Unable to obtain the update lock, skipping the database update. Skippinig the database update.");
+            } catch (IOException ex) {
+                throw new H2DBLockException(ex.getMessage(), ex);
             }
-        } catch (IOException ex) {
-            throw new H2DBLockException(ex.getMessage(), ex);
         }
     }
 
@@ -163,29 +169,31 @@ public class H2DBLock {
      * Releases the lock on the H2 database.
      */
     public void release() {
-        if (lock != null) {
-            try {
-                lock.release();
-                lock = null;
-            } catch (IOException ex) {
-                LOGGER.debug("Failed to release lock", ex);
+        synchronized (THREAD_LOCK) {
+            if (lock != null) {
+                try {
+                    lock.release();
+                    lock = null;
+                } catch (IOException ex) {
+                    LOGGER.debug("Failed to release lock", ex);
+                }
             }
-        }
-        if (file != null) {
-            try {
-                file.close();
-                file = null;
-            } catch (IOException ex) {
-                LOGGER.debug("Unable to delete lock file", ex);
+            if (file != null) {
+                try {
+                    file.close();
+                    file = null;
+                } catch (IOException ex) {
+                    LOGGER.debug("Unable to delete lock file", ex);
+                }
             }
+            if (lockFile != null && lockFile.isFile() && !lockFile.delete()) {
+                LOGGER.error("Lock file '{}' was unable to be deleted. Please manually delete this file.", lockFile.toString());
+                lockFile.deleteOnExit();
+            }
+            lockFile = null;
+            Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+            LOGGER.debug("Lock released ({}) @ {}", Thread.currentThread().getName(), timestamp.toString());
         }
-        if (lockFile != null && lockFile.isFile() && !lockFile.delete()) {
-            LOGGER.error("Lock file '{}' was unable to be deleted. Please manually delete this file.", lockFile.toString());
-            lockFile.deleteOnExit();
-        }
-        lockFile = null;
-        Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-        LOGGER.debug("Lock released ({}) @ {}", Thread.currentThread().getName(), timestamp.toString());
     }
 
     /**
