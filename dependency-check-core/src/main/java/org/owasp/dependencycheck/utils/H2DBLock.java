@@ -43,7 +43,7 @@ public class H2DBLock {
     /**
      * How long to sleep waiting for the lock.
      */
-    public static final int SLEEP_DURATION = 5000;
+    public static final int SLEEP_DURATION = 10000;
     /**
      * Max attempts to obtain a lock.
      */
@@ -108,7 +108,7 @@ public class H2DBLock {
                 if (!lockFile.getParentFile().isDirectory() && !lockFile.mkdir()) {
                     throw new H2DBLockException("Unable to create path to data directory.");
                 }
-                if (lockFile.isFile() && getFileAge(lockFile) > 5 && !lockFile.delete()) {
+                if (lockFile.isFile() && getFileAge(lockFile) > 20 && !lockFile.delete()) {
                     LOGGER.warn("An old db update lock file was found but the system was unable to delete "
                             + "the file. Consider manually deleting {}", lockFile.getAbsolutePath());
                 }
@@ -147,7 +147,7 @@ public class H2DBLock {
                     if (lock == null || !lock.isValid()) {
                         try {
                             Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-                            LOGGER.debug("Sleeping thread {} ({}) for 5 seconds because an exclusive lock on the database could not be obtained ({})",
+                            LOGGER.debug("Sleeping thread {} ({}) for 10 seconds because an exclusive lock on the database could not be obtained ({})",
                                     Thread.currentThread().getName(), magic, timestamp.toString());
                             Thread.sleep(SLEEP_DURATION);
                         } catch (InterruptedException ex) {
