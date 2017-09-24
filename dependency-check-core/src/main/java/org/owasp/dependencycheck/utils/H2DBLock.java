@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileLock;
 import java.security.SecureRandom;
+import java.sql.Timestamp;
 import java.util.Date;
 import javax.annotation.concurrent.NotThreadSafe;
 import org.owasp.dependencycheck.exception.H2DBLockException;
@@ -122,7 +123,8 @@ public class H2DBLock {
                             lock = null;
                             LOGGER.debug("Another process obtained a lock first ({})", Thread.currentThread().getName());
                         } else {
-                            LOGGER.debug("Lock file created ({})", Thread.currentThread().getName());
+                            Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                            LOGGER.debug("Lock file created ({}) @ {}", Thread.currentThread().getName(), timestamp.toString());
                         }
                     }
                 } catch (IOException | InterruptedException ex) {
@@ -139,11 +141,12 @@ public class H2DBLock {
                 }
                 if (lock == null || !lock.isValid()) {
                     try {
-                        LOGGER.debug("Sleeping thread {} for 5 seconds because an exclusive lock on the database could not be obtained",
-                                Thread.currentThread().getName());
+                        Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+                        LOGGER.debug("Sleeping thread {} for 5 seconds because an exclusive lock on the database could not be obtained ({})",
+                                Thread.currentThread().getName(), timestamp.toString());
                         Thread.sleep(SLEEP_DURATION);
                     } catch (InterruptedException ex) {
-                        LOGGER.trace("ignorable error, sleep was interrupted.", ex);
+                        LOGGER.debug("sleep was interrupted.", ex);
                         Thread.currentThread().interrupt();
                     }
                 }
@@ -165,7 +168,7 @@ public class H2DBLock {
                 lock.release();
                 lock = null;
             } catch (IOException ex) {
-                LOGGER.trace("Ignorable exception", ex);
+                LOGGER.debug("Failed to release lock", ex);
             }
         }
         if (file != null) {
@@ -173,7 +176,7 @@ public class H2DBLock {
                 file.close();
                 file = null;
             } catch (IOException ex) {
-                LOGGER.trace("Ignorable exception", ex);
+                LOGGER.debug("Unable to delete lock file", ex);
             }
         }
         if (lockFile != null && lockFile.isFile() && !lockFile.delete()) {
@@ -181,8 +184,8 @@ public class H2DBLock {
             lockFile.deleteOnExit();
         }
         lockFile = null;
-        Thread.yield();
-        LOGGER.debug("Lock released ({})", Thread.currentThread().getName());
+        Timestamp timestamp = new Timestamp(System.currentTimeMillis());
+        LOGGER.debug("Lock released ({}) @ {}", Thread.currentThread().getName(), timestamp.toString());
     }
 
     /**
