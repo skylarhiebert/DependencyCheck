@@ -129,7 +129,7 @@ public class H2DBLock {
                                 LOGGER.debug("Another process obtained a lock first ({})", Thread.currentThread().getName());
                             } else {
                                 Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-                                LOGGER.debug("Lock file created ({}) @ {}", Thread.currentThread().getName(), timestamp.toString());
+                                LOGGER.debug("Lock file created ({}) {} @ {}", Thread.currentThread().getName(), magic, timestamp.toString());
                             }
                         }
                     } catch (IOException | InterruptedException ex) {
@@ -140,15 +140,15 @@ public class H2DBLock {
                                 file.close();
                                 file = null;
                             } catch (IOException ex) {
-                                LOGGER.trace("Unable to close the file", ex);
+                                LOGGER.trace("Unable to close the lock file", ex);
                             }
                         }
                     }
                     if (lock == null || !lock.isValid()) {
                         try {
                             Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-                            LOGGER.debug("Sleeping thread {} for 5 seconds because an exclusive lock on the database could not be obtained ({})",
-                                    Thread.currentThread().getName(), timestamp.toString());
+                            LOGGER.debug("Sleeping thread {} ({}) for 5 seconds because an exclusive lock on the database could not be obtained ({})",
+                                    Thread.currentThread().getName(), magic, timestamp.toString());
                             Thread.sleep(SLEEP_DURATION);
                         } catch (InterruptedException ex) {
                             LOGGER.debug("sleep was interrupted.", ex);
@@ -192,7 +192,7 @@ public class H2DBLock {
             }
             lockFile = null;
             Timestamp timestamp = new Timestamp(System.currentTimeMillis());
-            LOGGER.debug("Lock released ({}) @ {}", Thread.currentThread().getName(), timestamp.toString());
+            LOGGER.debug("Lock released ({}) {} @ {}", Thread.currentThread().getName(), magic, timestamp.toString());
         }
     }
 
