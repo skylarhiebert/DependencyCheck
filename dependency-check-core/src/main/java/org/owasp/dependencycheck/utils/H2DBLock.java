@@ -108,9 +108,12 @@ public class H2DBLock {
                 if (!lockFile.getParentFile().isDirectory() && !lockFile.mkdir()) {
                     throw new H2DBLockException("Unable to create path to data directory.");
                 }
-                if (lockFile.isFile() && getFileAge(lockFile) > 20 && !lockFile.delete()) {
-                    LOGGER.warn("An old db update lock file was found but the system was unable to delete "
-                            + "the file. Consider manually deleting {}", lockFile.getAbsolutePath());
+                if (lockFile.isFile() && getFileAge(lockFile) > 30) {
+                    LOGGER.debug("An old db update lock file was found: {}", lockFile.getAbsolutePath());
+                    if (!lockFile.delete()) {
+                        LOGGER.warn("An old db update lock file was found but the system was unable to delete "
+                                + "the file. Consider manually deleting {}", lockFile.getAbsolutePath());
+                    }
                 }
                 int ctr = 0;
                 do {
@@ -202,9 +205,11 @@ public class H2DBLock {
      * @param file the file to calculate the age
      * @return the age of the file
      */
-    private long getFileAge(File file) {
+    private double getFileAge(File file) {
         final Date d = new Date();
         final long modified = file.lastModified();
-        return (d.getTime() - modified) / 1000 / 60;
+        final double time = (d.getTime() - modified) / 1000 / 60;
+        LOGGER.debug("Lock file age is {} minutes", time);
+        return time;
     }
 }
