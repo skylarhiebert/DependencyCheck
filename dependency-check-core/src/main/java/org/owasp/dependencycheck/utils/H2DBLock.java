@@ -47,7 +47,7 @@ public class H2DBLock {
     /**
      * Max attempts to obtain a lock.
      */
-    public static final int MAX_SLEEP_COUNT = 60;
+    public static final int MAX_SLEEP_COUNT = 120;
     /**
      * The file lock.
      */
